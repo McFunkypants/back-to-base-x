@@ -7,46 +7,70 @@
 var canvas, ctx, 
     terraindata, terraincanvas, terrainctx, 
     spritecanvas, spritectx, 
-    noise, 
-    ai; 
+    noise, ai,
+    x,y,i,val,num,len,hit;
+
+// Keys states (false: key is released / true: key is pressed)
+var up = right = down = left = false;
 
 const DEBUG = true;
 const spritew = 64;
-const spriteh = 64;
 const spriter = 32;
 const scorchw = 48;
-const scorchh = 48;
 const scorchr = 24;
 const holew = 40;
-const holeh = 40;
 const holer = 20;
 const numsprites = 8;
 
 // colour map for terrain shades
-var shades = [
+const shades = [
     [255,255,0,255], // ore
     [90,77,65,255], // rock
     [100,60,20,255], // mud
     [124,252,0,255], // grass
     [135,205,250,0], // sky
 ];
+const numshades = shades.length;
+const shadesize = 256 / numshades;
 
-window.onclick = function(e) {
+// terrain settings
+const blobSizeX = 250;
+const blobSizeY = 50;
+const perlinOffsetX = Math.random() * 10000;
+const perlinOffsetY = Math.random() * 10000;
+const detailSizeX = 10;
+const detailSizeY = 10;
+const detailStrength = 0.1; // for some roughness
+
+
+function click(e) {
     if (DEBUG) console.log("onclick");
-    var newai = {
-        active:true,
-        x:e.clientX,
-        y:e.clientY,
-        xofs:-4,
-        yofs:-8,
-        xs:(Math.random()*2-1) * 3,
-        ys:(Math.random()*2-1) * 3 - 3,
-        hp:1
+    var newai;
+    len = ai.length;
+    for (num=0; num<len; num++) {
+        if (!ai[num].active) { // reuse
+            newai = ai[num];
+            break;
+        }
     }
-    ai.push(newai);
+    if (!newai) { // brand new
+        if (DEBUG) console.log("new ai " + num);
+        newai = {};
+        ai.push(newai);
+    }
+    // respawn
+    newai.active=true;
+    newai.x=e.clientX;
+    newai.y=e.clientY;
+    newai.xofs=-4;
+    newai.yofs=-4;
+    newai.xs=(Math.random()*2-1) * 3;
+    newai.ys=(Math.random()*2-1) * 3 - 3;
+    newai.hp=1;
+    newai.explosive = (Math.random()>0.5);
 }
 
-window.onload = function () {
+function init() {
     if (DEBUG) console.log("onload");
     
     canvas = document.createElement("canvas");
@@ -63,7 +87,7 @@ window.onload = function () {
 
     spritecanvas = document.createElement("canvas");
     spritecanvas.width = spritew * numsprites;
-    spritecanvas.height = spriteh;
+    spritecanvas.height = spritew;
     spritectx = spritecanvas.getContext("2d");
 
     noise = new Perlin();
@@ -83,21 +107,10 @@ function generate() {
     spritectx.fillStyle = '#000000';
     spritectx.fill();    
 
-    // generate terrain
-    var blobSizeX = 250;
-    var blobSizeY = 50;
-    var numshades = shades.length;
-    var shadesize = 256 / numshades;
-    var perlinOffsetX = Math.random() * 10000;
-    var perlinOffsetY = Math.random() * 10000;
-    var detailSizeX = 6;
-    var detailSizeY = 6;
-    var detailStrength = 0.085; // for some roughness
-
-
-    for(var i = 0, len = terraindata.data.length; i < len; i += 4){
-        var x = Math.floor( (i / 4) % canvas.width );
-        var y = Math.floor( (i / 4) / canvas.width );
+    len = terraindata.data.length;
+    for(i = 0; i < len; i += 4){
+        x = Math.floor( (i / 4) % canvas.width );
+        y = Math.floor( (i / 4) / canvas.width );
         
 
         /*
@@ -114,18 +127,18 @@ function generate() {
 
         // n is an index into the colour table
         // +1/2 so it is 0..1
-        var str = (noise.noise(perlinOffsetX + (x / blobSizeX), perlinOffsetY + (y / blobSizeY), 0) + 1) / 2;
+        val = (noise.noise(perlinOffsetX + (x / blobSizeX), perlinOffsetY + (y / blobSizeY), 0) + 1) / 2;
 
         // perturb by another octave
-        str -= (detailStrength * (noise.noise(perlinOffsetX + (x / detailSizeX), perlinOffsetY + (y / detailSizeY), 0) + 1) / 2);
+        val -= (detailStrength * (noise.noise(perlinOffsetX + (x / detailSizeX), perlinOffsetY + (y / detailSizeY), 0) + 1) / 2);
 
-        var n = Math.floor(numshades * str); // split evenly
+        n = Math.floor(numshades * val); // split evenly
 
         // uneven strata sizes
-        if (str<0.15) { n = 0; }
-        else if (str<0.4) { n = 1; }
-        else if (str<0.42) { n = 2; }
-        else if (str<0.43) { n = 3; }
+        if (val<0.15) { n = 0; }
+        else if (val<0.4) { n = 1; }
+        else if (val<0.42) { n = 2; }
+        else if (val<0.43) { n = 3; }
         else { n = 4; }
 
 
@@ -152,46 +165,76 @@ function stampterrain(x,y,img) {
 
 	// only draw where source was visible - eg scorch marks
 	terrainctx.globalCompositeOperation = 'source-atop'; 
-    terrainctx.drawImage(img,0,0,spritew,spriteh,
-        x-scorchr,y-scorchr,scorchw,scorchh);
+    terrainctx.drawImage(img,0,0,spritew,spritew,
+        x-scorchr,y-scorchr,scorchw,scorchw);
 
 	// erase source where dest is: cut out holes!
 	terrainctx.globalCompositeOperation = 'destination-out';
-    terrainctx.drawImage(img,0,0,spritew,spriteh,
-        x-holer,y-holer,holew,holeh);
+    terrainctx.drawImage(img,0,0,spritew,spritew,
+        x-holer,y-holer,holew,holew);
 	
-    // grab colision data with new terrain - COSTLY!
+    // grab colision data with new terrain - COSTLY! GC!
     terraindata = terrainctx.getImageData(0,0,terraincanvas.width,terraincanvas.height);
 
 }
 
 function step() {
-    for (var num=0,max=ai.length; num<max; num++) {
+    for (num=0,max=ai.length; num<max; num++) {
         if (ai[num].active) {
-            var x = ai[num].x;
-            var y = ai[num].y;
+            x = ai[num].x;
+            y = ai[num].y;
+            // arrow keys to move
+            if (up) ai[num].ys = -1;
+            if (down) ai[num].ys = 1;
+            if (left) ai[num].xs = -1;
+            if (right) ai[num].xs = 1;
             // try moving here
             x += ai[num].xs;
             y += ai[num].ys;
             // bounds
             x = Math.max(0,Math.min(terraincanvas.width,x));
             y = Math.max(0,Math.min(terraincanvas.height,y));
-            // collision detection
-            var hit = collides(x,y);
-            // set new pos
-            if (hit) {
+            // check one axis at a time to allow wall sliding
+            hit = false;
+            
+            // vertical
+            if (collides(ai[num].x,y)) {
                 // stop moving
-                ai[num].xs = 0;
                 ai[num].ys = 0;
-                stampterrain(x,y,spritecanvas);
-                ai[num].active = false;
+                hit = true;
             } else {
                 // keep moving
-                ai[num].x = x;
                 ai[num].y = y;
                 // gravity
                 ai[num].ys += 0.0975;
             }
+            
+            // horizontal
+            if (collides(x,ai[num].y)) {
+                // stair climbing
+                if (!collides(x,ai[num].y-1)) {
+                    ai[num].y -= 1; // step up 1 pixel
+                    ai[num].x = x; // keep moving
+                } else if (!collides(x,ai[num].y-2)) {
+                    ai[num].y -= 2; // step up 2 pixels
+                    ai[num].x = x; // keep moving
+                } else {
+                    // stop moving
+                    ai[num].xs = 0;
+                    hit = true;
+                }
+            } else {
+                // keep moving
+                ai[num].x = x;
+            }
+
+            if (hit) {
+                if (ai[num].explosive) {
+                    stampterrain(x,y,spritecanvas);
+                    ai[num].active = false; // die?
+                }
+            }
+
         } // if active
     } 
 }
@@ -199,11 +242,11 @@ function step() {
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(terraincanvas,0,0);
-    for (var num=0,max=ai.length; num<max; num++) {
+    for (num=0,max=ai.length; num<max; num++) {
         if (ai[num].active) {
             ctx.drawImage(spritecanvas,
                 0,0,
-                spritew,spriteh,
+                spritew,spritew,
                 ai[num].x+ai[num].xofs,ai[num].y+ai[num].yofs,
                 4,4);
         }
@@ -215,3 +258,54 @@ function animate() {
     draw();
     requestAnimationFrame(animate);
 }
+
+// Keydown listener
+onkeydown = (e) => {
+
+  // Up (up / W / Z)
+  if(e.keyCode == 38 || e.keyCode == 90 || e.keyCode == 87){
+    up = true;
+  }
+  
+  // Right (right / D)
+  if(e.keyCode == 39 || e.keyCode == 68){
+    right = true;
+  }
+  
+  // Down (down / S)
+  if(e.keyCode == 40 || e.keyCode == 83){
+    down = true;
+  }
+  
+  // Left (left / A / Q)
+  if(e.keyCode == 37 || e.keyCode == 65 ||e.keyCode == 81){
+    left = true;
+  }
+}
+
+// Keyup listener
+onkeyup = (e) => {
+    
+  // Up
+  if(e.keyCode == 38 || e.keyCode == 90 || e.keyCode == 87){
+    up = false;
+  }
+  
+  // Right
+  if(e.keyCode == 39 || e.keyCode == 68){
+    right = false;
+  }
+  
+  // Down
+  if(e.keyCode == 40 || e.keyCode == 83){
+    down = false;
+  }
+  
+  // Left
+  if(e.keyCode == 37 || e.keyCode == 65 || e.keyCode == 81){
+    left = false;
+  }
+}
+
+window.addEventListener("load", init);
+window.addEventListener("click", click);
