@@ -56,7 +56,7 @@ function drawtxtCentered(str, x, y) {
     drawtxt(str, x - Math.round(measuretxt(str) / 2), y);
 }
 
-function drawtxt(str, x, y, ctx=window.ctx) {
+function drawtxt(str, x, y, ctx, wobblesize=0, wobblerate=0, wobblexrate=0) {
     if (FORCE_UPPERCASE) str = str.toUpperCase();
     if (!txt_img_loaded) {
         console.log("drawtxt: image not loaded");
@@ -75,6 +75,7 @@ function drawtxt(str, x, y, ctx=window.ctx) {
     var sx = 0;
     var sy = 0;
     var index = 0;
+    var wobble = 0;
 
     for (var c = 0, len = str.length; c < len; c++) {
 
@@ -99,6 +100,10 @@ function drawtxt(str, x, y, ctx=window.ctx) {
             // debug spam
             // console.log('txt: index:'+index+'=['+str[c]+'] '+sx+','+sy+' width='+sw)
 
+            if (wobblesize) {
+                wobble = Math.cos(performance.now()*wobblerate+txt_x*wobblexrate)*wobblesize;
+            }
+
             // draw it
             ctx.drawImage(txt_img,
                 sx,
@@ -106,7 +111,7 @@ function drawtxt(str, x, y, ctx=window.ctx) {
                 sw,
                 txt_h,
                 txt_x,
-                txt_y,
+                txt_y+wobble,
                 sw,
                 txt_h);
 

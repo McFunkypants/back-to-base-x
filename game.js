@@ -285,7 +285,9 @@ function animate() {
     framecount++;
     step();
     draw();
-    drawtxt("Return to Base-X\na #JS13k game\nby mcfunkypants\n\nFrame: "+framecount,8,8);
+    drawtxt("Return to Base-X\na #JS13k game\nby mcfunkypants\n\nFrame: "+framecount,8,8,ctx);
+    // demoscene cracktro style sin wave text scroller greetz (c) 1992
+    drawtxt("Greetz to my leet haxxor gamedev friends!",canvas.width - framecount,canvas.height-16,ctx,8,0.003,-0.04);
     requestAnimationFrame(animate);
 }
 
