@@ -6,45 +6,61 @@
 
 var canvas, ctx, 
     terraindata, terraincanvas, terrainctx, 
-    spritecanvas, spritectx, 
-    noise, ai,
+    stampcanvas, stampctx, 
+    spritesheet, spritesheet_loaded,
+    noise, 
+    ai,
+    // reusables
     x,y,i,val,num,len,hit;
 
-// Keys states (false: key is released / true: key is pressed)
+// player input
 var up = right = down = left = false;
 
 const DEBUG = true;
-const spritew = 64;
-const spriter = 32;
+const spritew = 8;
+const spriteh = 8;
+const stampw = 64;
+const stampr = 32;
 const scorchw = 48;
 const scorchr = 24;
 const holew = 40;
 const holer = 20;
 const numsprites = 8;
 
+// 0..1 perlin range for each shade
+var strata = [
+    0.15, // ore
+    0.4, // rock
+    0.44, // mud
+    0.46 // grass
+];
 // colour map for terrain shades
 const shades = [
     [255,255,0,255], // ore
     [90,77,65,255], // rock
     [100,60,20,255], // mud
-    [124,252,0,255], // grass
+    //[124,252,0,255], // grass
+    [30,60,10,255], // grass
     [135,205,250,0], // sky
 ];
 const numshades = shades.length;
 const shadesize = 256 / numshades;
 
 // terrain settings
-const blobSizeX = 250;
-const blobSizeY = 50;
+const blobSizeX = 300;
+const blobSizeY = 75;
 const perlinOffsetX = Math.random() * 10000;
 const perlinOffsetY = Math.random() * 10000;
-const detailSizeX = 10;
-const detailSizeY = 10;
+const detailSizeX = 16;
+const detailSizeY = 5;
 const detailStrength = 0.1; // for some roughness
 
 
 function click(e) {
     if (DEBUG) console.log("onclick");
+
+    sfx_pew();
+
     var newai;
     len = ai.length;
     for (num=0; num<len; num++) {
@@ -63,7 +79,7 @@ function click(e) {
     newai.x=e.clientX;
     newai.y=e.clientY;
     newai.xofs=-4;
-    newai.yofs=-4;
+    newai.yofs=-8; // feet pos
     newai.xs=(Math.random()*2-1) * 3;
     newai.ys=(Math.random()*2-1) * 3 - 3;
     newai.hp=1;
@@ -72,6 +88,13 @@ function click(e) {
 
 function init() {
     if (DEBUG) console.log("onload");
+
+    spritesheet = new Image();
+    spritesheet.onload = function() { 
+        if (DEBUG) console.log("spritesheet loaded");
+        spritesheet_loaded=true; 
+    }
+    spritesheet.src = "spritesheet.png";
     
     canvas = document.createElement("canvas");
     canvas.width = window.innerWidth;
@@ -85,10 +108,10 @@ function init() {
     terrainctx = terraincanvas.getContext("2d");
     terraindata = terrainctx.createImageData(canvas.width, canvas.height);
 
-    spritecanvas = document.createElement("canvas");
-    spritecanvas.width = spritew * numsprites;
-    spritecanvas.height = spritew;
-    spritectx = spritecanvas.getContext("2d");
+    stampcanvas = document.createElement("canvas");
+    stampcanvas.width = stampw * numsprites;
+    stampcanvas.height = stampw;
+    stampctx = stampcanvas.getContext("2d");
 
     noise = new Perlin();
     generate();
@@ -102,10 +125,10 @@ function generate() {
     ai = [];
 
     // generate spritesheet
-    spritectx.beginPath();
-    spritectx.arc(spriter, spriter, spriter, 0, 2*Math.PI); // x,y,r,start,end
-    spritectx.fillStyle = '#000000';
-    spritectx.fill();    
+    stampctx.beginPath();
+    stampctx.arc(stampr, stampr, stampr, 0, 2*Math.PI); // x,y,r,start,end
+    stampctx.fillStyle = '#000000';
+    stampctx.fill();    
 
     len = terraindata.data.length;
     for(i = 0; i < len; i += 4){
@@ -135,10 +158,10 @@ function generate() {
         n = Math.floor(numshades * val); // split evenly
 
         // uneven strata sizes
-        if (val<0.15) { n = 0; }
-        else if (val<0.4) { n = 1; }
-        else if (val<0.42) { n = 2; }
-        else if (val<0.43) { n = 3; }
+        if (val<strata[0]) { n = 0; }
+        else if (val<strata[1]) { n = 1; }
+        else if (val<strata[2]) { n = 2; }
+        else if (val<strata[3]) { n = 3; }
         else { n = 4; }
 
 
@@ -165,12 +188,12 @@ function stampterrain(x,y,img) {
 
 	// only draw where source was visible - eg scorch marks
 	terrainctx.globalCompositeOperation = 'source-atop'; 
-    terrainctx.drawImage(img,0,0,spritew,spritew,
+    terrainctx.drawImage(img,0,0,stampw,stampw,
         x-scorchr,y-scorchr,scorchw,scorchw);
 
 	// erase source where dest is: cut out holes!
 	terrainctx.globalCompositeOperation = 'destination-out';
-    terrainctx.drawImage(img,0,0,spritew,spritew,
+    terrainctx.drawImage(img,0,0,stampw,stampw,
         x-holer,y-holer,holew,holew);
 	
     // grab colision data with new terrain - COSTLY! GC!
@@ -179,7 +202,8 @@ function stampterrain(x,y,img) {
 }
 
 function step() {
-    for (num=0,max=ai.length; num<max; num++) {
+    len=ai.length;
+    for (num=0; num<len; num++) {
         if (ai[num].active) {
             x = ai[num].x;
             y = ai[num].y;
@@ -230,7 +254,7 @@ function step() {
 
             if (hit) {
                 if (ai[num].explosive) {
-                    stampterrain(x,y,spritecanvas);
+                    stampterrain(x,y,stampcanvas);
                     ai[num].active = false; // die?
                 }
             }
@@ -242,20 +266,26 @@ function step() {
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(terraincanvas,0,0);
-    for (num=0,max=ai.length; num<max; num++) {
-        if (ai[num].active) {
-            ctx.drawImage(spritecanvas,
-                0,0,
-                spritew,spritew,
-                ai[num].x+ai[num].xofs,ai[num].y+ai[num].yofs,
-                4,4);
+    if (spritesheet_loaded) {
+        for (num=0,max=ai.length; num<max; num++) {
+            if (ai[num].active) {
+                ctx.drawImage(spritesheet,
+                    0,0,
+                    spritew,spriteh,
+                    ai[num].x+ai[num].xofs,ai[num].y+ai[num].yofs,
+                    spritew,spriteh);
+            }
         }
     }
 }
 
+var framecount = 0;
+
 function animate() {
+    framecount++;
     step();
     draw();
+    drawtxt("Return to Base-X\na #JS13k game\nby mcfunkypants\n\nFrame: "+framecount,8,8);
     requestAnimationFrame(animate);
 }
 
@@ -306,6 +336,33 @@ onkeyup = (e) => {
     left = false;
   }
 }
+
+// sound effects using xem's amazing code
+var audioctx=new AudioContext();
+function sfx_pew() {
+    if (DEBUG) console.log("sfx");
+    if (!audioctx) return;
+    var A = audioctx; // ctk
+
+    // Sound
+    var f = function(i){
+    var n=2e4;
+    if (i > n) return null;
+    var q = t(i,n);
+    return Math.sin(-i*0.03*Math.sin(0.09*i+Math.sin(i/200))+Math.sin(i/100))*q*q;
+    }
+    // Sound player
+    var t=(i,n)=>(n-i)/n;
+    //var A=new AudioContext(); // we reuse the old one
+    var m=A.createBuffer(1,96e3,48e3);
+    var b=m.getChannelData(0);
+    for(var i=96e3;i--;)b[i]=f(i);
+    var s=A.createBufferSource();
+    s.buffer=m;
+    s.connect(A.destination);
+    s.start();
+}
+
 
 window.addEventListener("load", init);
 window.addEventListener("click", click);
