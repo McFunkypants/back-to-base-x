@@ -4,17 +4,21 @@
 // http://www.christerkaitila.com
 // http://twitter.com/mcfunkypants
 
-var canvas, ctx, 
+/* global Perlin, ZZFX, drawtxt */
+
+var canvas, ctx, framecount,
     terraindata, terraincanvas, terrainctx, 
     stampcanvas, stampctx, 
-    spritesheet, spritesheet_loaded,
+    spritesheet, spritesheet_loaded, spritesheet2,
     noise, 
     ai,
+    // inputs
+    up,right,down,left,
     // reusables
-    x,y,i,val,num,len,hit;
+    x,y,i,n,val,num,len,hit,flip;
 
-// player input
-var up = right = down = left = false;
+// reset player input
+up = right = down = left = framecount = 0;
 
 const DEBUG = true;
 const spritew = 8;
@@ -26,6 +30,8 @@ const scorchr = 24;
 const holew = 40;
 const holer = 20;
 const numsprites = 8;
+const WALKCYCLE_FRAMECOUNT = 4;
+const WALKCYCLE_FRAMESKIP = 5;
 
 // 0..1 perlin range for each shade
 var strata = [
@@ -44,7 +50,6 @@ const shades = [
     [135,205,250,0], // sky
 ];
 const numshades = shades.length;
-const shadesize = 256 / numshades;
 
 // terrain settings
 const blobSizeX = 300;
@@ -55,11 +60,99 @@ const detailSizeX = 16;
 const detailSizeY = 5;
 const detailStrength = 0.1; // for some roughness
 
+// nice sounds I've found
+var sfx = {
+    miss_woosh: 54897,
+    whistle_up: 83755,
+    wave_scrape: 29757,
+    bubble_jump: 13387,
+    robo_sense: 38037,
+    sting_hurt: 24148,
+    woosh_punch: 18845,
+    soft_bwop: 51561,
+    whum_soft: 79858,
+    step_rip: 95746,
+    wah_whee: 97710,
+    pickup_bubble: 73760,
+    alien_hmm: 73742,
+    takeoff_eh: 1094,
+    splash_hit: 15966,
+    bubble: 11730,
+    woosh_howl: 62230,
+    teleport: 58562,
+    bird_whistle: 5027,
+    robo_wha: 5029,
+    punch_woosh: 38058,
+    splat: 56192,
+    crunch: 6539,
+    swing: 55238,
+    bird_wow: 5193,
+    robo_whee: 68581,
+    compu_butt: 88748,
+    hiyah: 36507,
+    synth: 51314,
+    flutter: 50970,
+    wet_hop: 40803,
+    quiet_tap: 58210,
+    dive_deep: 36626,
+    quiet_discard: 90825,
+    dig_smooth: 14155,
+    zap: 13698,
+    sword_chop: 81875,
+    whip_throw: 21974,
+    why: 5321,
+    quiet_noise: 79685,
+    shock_wisp: 91896,
+    awaken_purr: 60386,
+    slash: 49521,
+    soft_oof: 20165,
+    flute: 15807,
+    slime_smile: 91932,
+    tweet_squeak: 72732,
+    fail: 32962,
+    silent_organ: 70963,
+    fast_wish: 21103,
+    robo_whine: 22429,
+    timpani: 30227,
+    blaster: 37334,
+    blow: 22454,
+    missile: 90504,
+    hurt: 47168,
+    shatter: 460,
+    quiet_pole: 13290,
+    hit_soft: 9270,
+    robo_cool: 66730,
+    bomb_fall: 85933,
+    gowhee: 3351,
+    noisy_click: 3722,
+    hitbox: 63521,
+    hit_back: 8496,
+    fast_swing: 26265,
+    hit_shield: 5177,
+    drip: 77903,
+    shoot_air: 61156,
+    bang: 42667,
+    beep: 35558,
+    tone: 0,
+    punch_hit: 1,
+    quiet_frong: 14,
+    karate: 28,
+    pac: 56,
+    small_impact: 58,
+    bwu: 84,
+    robo_hum: 97
+};
+
+function randomProperty(obj) {
+    var keys = Object.keys(obj)
+    return obj[keys[ keys.length * Math.random() << 0]];
+};
 
 function click(e) {
     if (DEBUG) console.log("onclick");
 
-    sfx_pew();
+    //ZZFX.z(sfx.karate);
+    ZZFX.z(randomProperty(sfx));
 
     var newai;
     len = ai.length;
@@ -74,6 +167,7 @@ function click(e) {
         newai = {};
         ai.push(newai);
     }
+
     // respawn
     newai.active=true;
     newai.x=e.clientX;
@@ -84,6 +178,33 @@ function click(e) {
     newai.ys=(Math.random()*2-1) * 3 - 3;
     newai.hp=1;
     newai.explosive = (Math.random()>0.5);
+    newai.frame = Math.floor(Math.random()*WALKCYCLE_FRAMECOUNT);
+}
+
+function mirrorImage(img) { // returns a canvas
+    if (DEBUG) console.log("mirrorImage");
+    
+    var flipped = document.createElement("canvas");
+    var flippedCTX = flipped.getContext('2d');
+
+    var scaleH = -1;
+    var scaleV = 1;
+    var posX = img.width * -1; // Set x position to -100% if flip horizontal 
+    var posY = 0; // Set y position to -100% if flip vertical
+
+    flipped.width = img.width;
+    flipped.height = img.height;
+    
+    // debug - I suck
+    flippedCTX.fillStyle = "red";
+    flippedCTX.fillRect(0,0,img.width,img.height);
+
+    flippedCTX.save(); // Save the current state
+    flippedCTX.scale(scaleH, scaleV); // Set scale to flip the image
+    flippedCTX.drawImage(img, posX, posY, img.width, img.height); // draw the image
+    flippedCTX.restore(); // Restore the last saved state
+
+    return flipped;
 }
 
 function init() {
@@ -92,6 +213,8 @@ function init() {
     spritesheet = new Image();
     spritesheet.onload = function() { 
         if (DEBUG) console.log("spritesheet loaded");
+        // create a miorr image of it for left facing sprites
+        spritesheet2 = mirrorImage(spritesheet);
         spritesheet_loaded=true; 
     }
     spritesheet.src = "spritesheet.png";
@@ -135,21 +258,7 @@ function generate() {
         x = Math.floor( (i / 4) % canvas.width );
         y = Math.floor( (i / 4) / canvas.width );
         
-
-        /*
-        // since n is -1..1, add +1 and multiply with 127 to get 0..255
-        var n = (noise.noise(perlinOffsetX + (x / blobSizeX), perlinOffsetY + (y / blobSizeY), 0) + 1) * 127;
-        // reduce the colour count to shades of grey
-        //if (n<127) n = 0; else n = 255; // 1 bit b&w works great too
-        n = Math.round(n/shadesize*shadesize);
-        image.data[i] = n;
-        image.data[i+1] = n;
-        image.data[i+2] = n;
-        image.data[i+3] = 255;
-        */
-
-        // n is an index into the colour table
-        // +1/2 so it is 0..1
+        // n is an index into the colour table (+1/2 so it is 0..1)
         val = (noise.noise(perlinOffsetX + (x / blobSizeX), perlinOffsetY + (y / blobSizeY), 0) + 1) / 2;
 
         // perturb by another octave
@@ -164,7 +273,6 @@ function generate() {
         else if (val<strata[3]) { n = 3; }
         else { n = 4; }
 
-
         terraindata.data[i] = shades[n][0];
         terraindata.data[i+1] = shades[n][1];
         terraindata.data[i+2] = shades[n][2];
@@ -172,7 +280,6 @@ function generate() {
     }
 
     // write pixel data to destination context
-    //ctx.putImageData(terraindata,0,0);
     terrainctx.putImageData(terraindata,0,0);
 }
 
@@ -267,19 +374,31 @@ function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.drawImage(terraincanvas,0,0);
     if (spritesheet_loaded) {
-        for (num=0,max=ai.length; num<max; num++) {
+        for (num=0,len=ai.length; num<len; num++) {
             if (ai[num].active) {
+                
+                // facing left?
+                flip = (ai[num].xs<0);
+                // spritesheet coords
+                ai[num].frame++;
+                x = spritew*((Math.floor(ai[num].frame/WALKCYCLE_FRAMESKIP)) % WALKCYCLE_FRAMECOUNT);
+                y = 0;
+                // draw the ai using a spritesheet
                 ctx.drawImage(spritesheet,
-                    0,0,
-                    spritew,spriteh,
-                    ai[num].x+ai[num].xofs,ai[num].y+ai[num].yofs,
-                    spritew,spriteh);
+                    //flip?spritesheet2:spritesheet, // FIXME spritesheet2 doesn't work
+                    x, 
+                    y,
+                    spritew,
+                    spriteh,
+                    ai[num].x+ai[num].xofs,
+                    ai[num].y+ai[num].yofs,
+                    spritew,
+                    spriteh);
+               
             }
         }
     }
 }
-
-var framecount = 0;
 
 function animate() {
     framecount++;
@@ -338,33 +457,6 @@ onkeyup = (e) => {
     left = false;
   }
 }
-
-// sound effects using xem's amazing code
-var audioctx=new AudioContext();
-function sfx_pew() {
-    if (DEBUG) console.log("sfx");
-    if (!audioctx) return;
-    var A = audioctx; // ctk
-
-    // Sound
-    var f = function(i){
-    var n=2e4;
-    if (i > n) return null;
-    var q = t(i,n);
-    return Math.sin(-i*0.03*Math.sin(0.09*i+Math.sin(i/200))+Math.sin(i/100))*q*q;
-    }
-    // Sound player
-    var t=(i,n)=>(n-i)/n;
-    //var A=new AudioContext(); // we reuse the old one
-    var m=A.createBuffer(1,96e3,48e3);
-    var b=m.getChannelData(0);
-    for(var i=96e3;i--;)b[i]=f(i);
-    var s=A.createBufferSource();
-    s.buffer=m;
-    s.connect(A.destination);
-    s.start();
-}
-
 
 window.addEventListener("load", init);
 window.addEventListener("click", click);
